@@ -3,6 +3,7 @@ using RestSharp;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices.WindowsRuntime;
@@ -48,11 +49,6 @@ namespace English_App
                     Sentences.Add(new Sentence(s.Trim()));
                 }
 
-                //foreach (var sentence in Sentences)
-                //{
-                //    Translate(sentence.Text, sentence);
-                //}
-
                 new Thread(new ThreadStart(() =>
                 {
                     foreach (var sentence in Sentences)
@@ -80,51 +76,56 @@ namespace English_App
             try
             {
                 string url = string.Format("https://translate.google.com/?sl=auto&tl=vi&text={0}&op=translate", HttpUtility.UrlEncode(text));
-                LoadCompletedEventHandler handler = null;
-                handler = (sender, e) =>
+                await Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal, () =>
                 {
-                    new Thread(new ThreadStart(async () =>
+                    sentence.IsTranslating = true;
+                    webView.Navigate(new Uri(url));
+                });
+
+                bool isSuccess = false;
+                AutoResetEvent are = new AutoResetEvent(false);
+                while (!isSuccess)
+                {
+                    are.WaitOne(1000);
+                    if (isSuccess)
                     {
-                        AutoResetEvent are = new AutoResetEvent(false);
-                        bool isSuccess = false;
-                        while (true)
+                        break;
+                    }
+                    await Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal, async () =>
+                    {
+                        try
                         {
-                            are.WaitOne(500);
-
-                            await Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal, async () =>
+                            var html = await webView.InvokeScriptAsync("eval", new string[] { "document.documentElement.outerHTML;" });
+                            Regex regex = new Regex("<span class=\"Q4iAWc\"(?:(?!>).)*>(?<content>((?!<\\/span>).)*)<\\/span>");
+                            Match match = regex.Match(html);
+                            if (match.Success)
                             {
-                                var html = await webView.InvokeScriptAsync("eval", new string[] { "document.documentElement.outerHTML;" });
-                                Regex regex = new Regex("<span class=\"Q4iAWc\"(?:(?!>).)*>(?<content>((?!<\\/span>).)*)<\\/span>");
-                                Match match = regex.Match(html);
-                                if (match.Success)
-                                {
-                                    sentence.VNText = match.Groups["content"].Value;
-                                    sentence.IsTranslating = false;
-                                    isSuccess = true;
-                                    webView.LoadCompleted -= handler;
-                                }
-                                are.Set();
-                            });
-
-                            are.WaitOne();
-                            if (isSuccess)
-                            {
-                                mainEvent.Set();
-                                break;
+                                sentence.VNText = match.Groups["content"].Value;
+                                sentence.IsTranslating = false;
+                                isSuccess = true;
                             }
                         }
-                    })).Start();
-                };
-                await Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal, async () =>
-                {
-                    webView.Navigate(new Uri(url));
-                    webView.LoadCompleted += handler;
-                });
+                        catch (Exception)
+                        {
+                            //
+                        }
+                        finally
+                        {
+                            are.Set();
+                        }
+                    });
+                }
+                mainEvent.Set();
             }
             catch (Exception ex)
             {
                 //
             }
+        }
+
+        private void log(string mess)
+        { 
+            Debug.WriteLine("{0}, {1}, {2}", DateTime.Now.ToString(), Thread.CurrentThread.ManagedThreadId.ToString(), mess);
         }
 
         //private void Translate(string text, Sentence sentence)

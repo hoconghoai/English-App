@@ -48,7 +48,6 @@ namespace English_App.Model
         public Sentence(string text)
         {
             Text = text;
-            IsTranslating = true;
         }
 
         protected void OnPropertyChanged([CallerMemberName] string name = null)
